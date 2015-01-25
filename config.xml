@@ -1,0 +1,32 @@
+<natproxy>
+    <server-addr>218.244.129.150</server-addr>
+    <server-port>8888</server-port>
+    <port-mappings>
+        <mapping>
+            <client-addr>127.0.0.1</client-addr>
+            <client-port>80</client-port>
+            <mapping-port>8880</mapping-port>
+        </mapping>
+        <mapping>
+            <client-addr>192.168.0.126</client-addr>
+            <client-port>3389</client-port>
+            <mapping-port>8881</mapping-port>
+        </mapping>
+        <mapping>
+            <client-addr>192.168.0.116</client-addr>
+            <client-port>80</client-port>
+            <mapping-port>8882</mapping-port>
+        </mapping>
+        <mapping>
+            <client-addr>192.168.0.116</client-addr>
+            <client-port>8080</client-port>
+            <mapping-port>8883</mapping-port>
+        </mapping>
+        <mapping>
+            <client-addr>192.168.0.234</client-addr>
+            <client-port>3389</client-port>
+            <mapping-port>8884</mapping-port>
+        </mapping>
+
+    </port-mappings>
+</natproxy>
