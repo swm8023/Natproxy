@@ -26,6 +26,7 @@ Compile with cmake in the diretory 'build'
 ```
 mkdir build && cd build
 cmake ..
+make
 ```
   
 Run server at 123.123.123.123
