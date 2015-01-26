@@ -1,5 +1,5 @@
 # Natproxy
-A proxy to traversal NAT, like port forwarding.
+Implenment port forwarding by dual proxys.
 
 # Example
 Config file is like this
