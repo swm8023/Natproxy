@@ -41,4 +41,4 @@ Run Client at local network
   
 Then you can access 192.168.0.126:3389 by 123.123.123.123:8881 and access 192.168.0.116:80 by 123.123.123.123:8882.  
    
-This Project is depend on libohnet.
+This Project is depended on libohnet.
