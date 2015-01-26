@@ -27,6 +27,11 @@
             <client-port>3389</client-port>
             <mapping-port>8884</mapping-port>
         </mapping>
+        <mapping>
+            <client-addr>192.168.0.168</client-addr>
+            <client-port>3389</client-port>
+            <mapping-port>8885</mapping-port>
+        </mapping>
 
     </port-mappings>
 </natproxy>

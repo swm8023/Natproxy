@@ -11,6 +11,7 @@
 #define PACKOP_DATA  0
 #define PACKOP_CLOSE 1
 #define PACKOP_SETMP 2
+#define PACKOP_KEEP  3
 
 typedef struct _tag_client_cfg {
     net_addr addr;
@@ -18,14 +19,17 @@ typedef struct _tag_client_cfg {
     tcp_client client;
     int status;
     evt_timer rcn_ev;
+    evt_timer keep_ev;
 } client_cfg;
 
 typedef struct _tag_nat_client{
     client_cfg *ccfg;
     tcp_client *client;
     int id;
+    int bt;
     int closeflag;
     ohbuffer cache;
+
 } nat_client;
 
 net_addr servaddr;
@@ -94,6 +98,15 @@ int client_parse_cfg(const char *fname) {
     }
 }
 
+void cc_timer_keep(evt_loop *loop, evt_timer *ev) {
+    tcp_client* client = (tcp_client*)ev->data;
+    client_cfg *ccfg = (client_cfg*)client->data;
+    char pack[BUFSZ];
+    complete_package_head(pack, 9, PACKOP_KEEP);
+    memcpy(pack + 5, (char*)&ccfg->mapport, 4);
+    tcp_send(client, pack, 9);
+}
+
 /* client to LAN */
 void on_ss_connect(tcp_client *client) {
     nat_client *nc = (nat_client*)client->data;
@@ -103,7 +116,7 @@ void on_ss_connect(tcp_client *client) {
         tcp_close(client);
         return;
     } else {
-        log_info("ss %d connect success", nc->id);
+        log_info("ss %d connect", nc->id);
 
         /* send cached data*/
         while (buf_used(&nc->cache)) {
@@ -120,6 +133,7 @@ void on_ss_read(tcp_client *client) {
     /* send data to server */
     while (buf_used(rbuf)) {
         int n = buf_readall(rbuf, tmp + 9, BUFSZ - 9);
+        nc->bt += n;
         if (nc->ccfg->status == STATUS_OK) {
             complete_package_head(tmp, n + 9, PACKOP_DATA);
             memcpy(tmp + 5, (char*)&nc->id, 4);
@@ -136,6 +150,9 @@ void on_ss_close(tcp_client *client) {
         complete_package_head(tmp, 9, PACKOP_CLOSE);
         memcpy(tmp + 5, (char*)&nc->id, 4);
         tcp_send(&nc->ccfg->client, tmp, 9);
+        log_info("ss %d send close(data %d)", nc->id, nc->bt);
+    } else {
+        log_info("ss %d recv close(data %d)", nc->id, nc->bt);
     }
     map_erase_val(client_map, nc->id);
     buf_destroy(&nc->cache);
@@ -147,18 +164,23 @@ void on_cc_connect(tcp_client *client) {
     client_cfg *ccfg = (client_cfg*)client->data;
 
     if (client->flag & TCPFLG_CLT_CONNFAIL) {
-        log_info("client cc %d connect failed", ccfg->mapport);
+        log_info("cc %d connect failed", ccfg->mapport);
         tcp_close(client);
         return;
     } else if (client->flag & TCPFLG_CLT_CONNED) {
         ccfg->status = STATUS_OK;
-        log_info("client cc %d connect success", ccfg->mapport);
+        log_info("cc %d connect success", ccfg->mapport);
 
         /* send mapping port as connection id */
         char pack[BUFSZ];
         complete_package_head(pack, 9, PACKOP_SETMP);
         memcpy(pack + 5, (char*)&ccfg->mapport, 4);
         tcp_send(client, pack, 9);
+
+        /* keep alive */
+        evt_timer_init(&ccfg->keep_ev, cc_timer_keep, SECOND(10), SECOND(10));
+        evt_set_data(&ccfg->keep_ev, client);
+        evt_timer_start(client->loop_on, &ccfg->keep_ev);
     }
 }
 
@@ -200,6 +222,7 @@ void on_cc_read(tcp_client *client) {
                 nc->client = client;
                 nc->ccfg = ccfg;
                 nc->id = opid;
+                nc->bt = 0;
                 nc->closeflag = 0;
                 buf_init(&nc->cache, OHBUFFER_UNIT_DEFAULT_SIZE, NULL, 0);
 
@@ -221,6 +244,8 @@ void on_cc_read(tcp_client *client) {
                 nat_client *nc = (nat_client*)nclient->data;
                 nc->closeflag = 1;
                 tcp_close(nclient);
+            } else {
+                log_info("nclient is null when recv close");
             }
 
         } else {
@@ -248,6 +273,9 @@ void on_cc_close(tcp_client *client) {
     ccfg->status = STATUS_NOK;
 
     /* start reconnect timer */
+    if (ccfg->keep_ev.active)
+        evt_timer_stop(client->loop_on, &ccfg->keep_ev);
+
     evt_timer_init(&ccfg->rcn_ev, cc_reconn, SECOND(10), 0);
     evt_set_data(&ccfg->rcn_ev, ccfg);
     evt_timer_start(client->loop_on, &ccfg->rcn_ev);
@@ -255,14 +283,23 @@ void on_cc_close(tcp_client *client) {
 
 
 int main(int argc, char *argv[]) {
+    set_default_logif_level(LOG_INFO);
+
     portcfg_map = map_new(int, client_cfg*);
     client_map  = map_new(int, client_map*);
 
-    if (argc < 1) {
-        client_parse_cfg(argv[0]);
+    if (argc == 2) {
+        char rpath[BUFSZ];
+        if (realpath(argv[1], rpath)) {
+            client_parse_cfg(rpath);
+        } else {
+            log_fatal("no such file");
+        }
     } else {
         client_parse_cfg("config.xml");
     }
+
+    make_daemon();
 
     evt_loop* loop = evt_loop_init();
 

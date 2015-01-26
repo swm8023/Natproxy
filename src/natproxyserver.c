@@ -11,6 +11,7 @@
 #define PACKOP_DATA  0
 #define PACKOP_CLOSE 1
 #define PACKOP_SETMP 2
+#define PACKOP_KEEP  3
 
 typedef struct _tag_client_cfg {
     net_addr addr;
@@ -24,6 +25,7 @@ typedef struct _tag_nat_client{
     client_cfg *ccfg;
     tcp_client *client;
     int id;
+    int bt;
     int closeflag;
     ohbuffer cache;
 } nat_client;
@@ -106,6 +108,7 @@ void on_ss_accept(tcp_client *client) {
 
     tcp_server *server = (tcp_server*)client->peer;
     nc->ccfg = (client_cfg*)server->data;
+    nc->bt = 0;
 
     log_info("accept client %d", nc->id);
 }
@@ -133,6 +136,9 @@ void on_ss_close(tcp_client *client) {
         complete_package_head(tmp, 9, PACKOP_CLOSE);
         memcpy(tmp + 5, (char*)&nc->id, 4);
         tcp_send(nc->ccfg->client, tmp, 9);
+        log_info("ss %d send close(data %d)", nc->id, nc->bt);
+    } else {
+        log_info("ss %d recv close(data %d)", nc->id, nc->bt);
     }
     map_erase_val(client_map, nc->id);
     ohfree(nc);
@@ -140,7 +146,8 @@ void on_ss_close(tcp_client *client) {
 
 /* client from lan */
 void on_cc_accept(tcp_client *client) {
-
+    log_info("cc connect");
+    client->data = NULL;
 }
 
 void on_cc_read(tcp_client *client) {
@@ -167,7 +174,11 @@ void on_cc_read(tcp_client *client) {
             len -= 9;
             buf_read(rbuf, len, tmp, BUFSZ);
             if (nclient != NULL) {
+                nat_client *nc = (nat_client*)nclient->data;
+                nc->bt += len;
                 tcp_send(nclient, tmp, len);
+            } else {
+                log_info("nclient is null when send data");
             }
         /* close command */
         } else if (op == PACKOP_CLOSE) {
@@ -175,7 +186,10 @@ void on_cc_read(tcp_client *client) {
             if (nclient) {
                 nat_client *nc = (nat_client*)nclient->data;
                 nc->closeflag = 1;
-                tcp_close(nclient);
+                nclient->flag |= TCPFLG_CLT_WAITCLS;
+                evt_io_start(nclient->loop_on, &nclient->write_ev);
+            } else {
+                log_info("nclient is null when recv close");
             }
         } else if (op == PACKOP_SETMP) {
             client_cfg *ccfg = *(client_cfg**)map_at(portcfg_map, opid);
@@ -186,6 +200,8 @@ void on_cc_read(tcp_client *client) {
                 ccfg->client = client;
                 ccfg->status = STATUS_OK;
             }
+        } else if (op == PACKOP_KEEP) {
+
         } else {
             log_fatal("error operation");
         }
@@ -196,22 +212,31 @@ void on_cc_read(tcp_client *client) {
 void on_cc_close(tcp_client *client) {
     if (client->data) {
         client_cfg *ccfg = (client_cfg*)client->data;
-
+        log_info("cc %d close", ccfg->mapport);
         ccfg->status = STATUS_NOK;
     }
 }
 
 
 int main(int argc, char *argv[]) {
+    set_default_logif_level(LOG_INFO);
     char *localip = "0.0.0.0";
     portcfg_map = map_new(int, client_cfg*);
     client_map  = map_new(int, client_map*);
 
-    if (argc < 1) {
-        client_parse_cfg(argv[0]);
+    if (argc == 2) {
+        char rpath[BUFSZ];
+        if (realpath(argv[1], rpath)) {
+            client_parse_cfg(rpath);
+        } else {
+            log_fatal("no such file");
+        }
     } else {
         client_parse_cfg("config.xml");
     }
+
+
+    make_daemon();
 
     evt_loop* loop = evt_loop_init();
 

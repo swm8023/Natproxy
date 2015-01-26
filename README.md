@@ -2,7 +2,7 @@
 Implenment port forwarding by dual proxys.
 
 # Example
-Config file is like this
+Config file
 ```
 <natproxy>
     <server-addr>123.123.123.123</server-addr>
@@ -21,7 +21,23 @@ Config file is like this
     </port-mappings>
 </natproxy>
 ```
-Run npserver at 123.123.123.123 and run npclient at local network.  
+  
+Compile with cmake in the diretory 'build'
+```
+mkdir build && cd build
+cmake ..
+```
+  
+Run server at 123.123.123.123
+```
+./bin/npserver ../config.xml
+```
+  
+Run Client at local network
+```
+./bin/npclient ../config.xml
+```
+  
 Then you can access 192.168.0.126:3389 by 123.123.123.123:8881 and access 192.168.0.116:80 by 123.123.123.123:8882.  
    
 This Project is depend on libohnet.
